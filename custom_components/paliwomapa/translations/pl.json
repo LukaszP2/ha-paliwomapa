@@ -1,0 +1,93 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PaliwoMapa",
+        "description": "Wybierz sposób dostępu. Konto jest opcjonalne.",
+        "data": {
+          "auth_mode": "Tryb dostępu"
+        }
+      },
+      "account": {
+        "title": "Konto PaliwoMapa",
+        "description": "Dane konta służą do pobrania profilu i ulubionych stacji.",
+        "data": {
+          "email": "E-mail",
+          "password": "Hasło"
+        }
+      },
+      "stations": {
+        "title": "Monitorowane stacje",
+        "description": "Dodaj konkretne stacje po linku/ID albo wyszukaj stacje w promieniu od współrzędnych domu skonfigurowanych w Home Assistant. Promień 1–50 km. Możesz też pominąć wybór i dodać stacje później.",
+        "data": {
+          "station_ids": "Linki lub ID stacji",
+          "source": "Sposób wyboru stacji",
+          "radius_km": "Promień wyszukiwania (km)"
+        }
+      },
+      "select_nearby": {
+        "title": "Stacje w pobliżu",
+        "description": "Znaleziono {count} stacji z danymi cenowymi w wybranym promieniu. Zaznacz stacje do monitorowania. Na liście widzisz nazwę, adres, odległość i dostępne ceny.",
+        "data": {
+          "station_ids": "Wybierz stacje"
+        }
+      },
+      "fuels": {
+        "title": "Interesujące Cię paliwa",
+        "description": "Wybierz paliwa, dla których integracja ma tworzyć encje cen i stacji. Wybór możesz później zmienić w opcjach integracji.",
+        "data": {
+          "fuel_types": "Monitorowane rodzaje paliwa"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Logowanie nie powiodło się. Sprawdź e-mail i hasło.",
+      "invalid_station_ids": "Podaj prawidłowe ID lub linki do stacji albo pozostaw pole puste.",
+      "cannot_connect": "Nie udało się połączyć z PaliwoMapa.",
+      "some_stations_unavailable": "Nie udało się pobrać danych wszystkich podanych stacji. Sprawdź ID/linki.",
+      "unknown": "Nieoczekiwany błąd. Sprawdź logi Home Assistant.",
+      "no_nearby_stations": "Nie znaleziono stacji z cenami PaliwoMapa w tym promieniu. Zwiększ promień lub spróbuj ponownie.",
+      "nearby_search_failed": "Nie udało się wyszukać stacji w okolicy. Spróbuj później.",
+      "home_location_missing": "Ustaw prawidłowe współrzędne domu w Ustawieniach → System → Ogólne, a następnie spróbuj ponownie.",
+      "select_at_least_one_station": "Zaznacz co najmniej jedną stację.",
+      "select_at_least_one_fuel": "Wybierz co najmniej jeden rodzaj paliwa."
+    },
+    "abort": {
+      "already_configured": "PaliwoMapa jest już skonfigurowana."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Stacje i paliwa",
+        "description": "Aktualnie monitorowane stacje: {current_stations}. Wybierz interesujące Cię paliwa. Operacje na stacjach działają tak jak dotychczas.",
+        "data": {
+          "action": "Operacja (wybierz „Zapisz wybór paliw”, aby zmienić tylko paliwa)",
+          "station_ids": "Linki lub ID stacji",
+          "radius_km": "Promień wyszukiwania (km)",
+          "fuel_types": "Monitorowane rodzaje paliwa"
+        }
+      },
+      "select_nearby": {
+        "title": "Stacje w pobliżu",
+        "description": "Znaleziono {count} stacji z cenami w wybranym promieniu. Zaznacz stacje do dodania. Dotychczasowe stacje pozostaną na liście.",
+        "data": {
+          "station_ids": "Wybierz stacje"
+        }
+      }
+    },
+    "error": {
+      "invalid_station_ids": "Podaj prawidłowe ID lub linki do stacji.",
+      "cannot_connect": "Nie udało się pobrać danych stacji.",
+      "some_stations_unavailable": "Nie udało się pobrać danych wszystkich podanych stacji.",
+      "select_station_to_remove": "Wpisz ID/link stacji do usunięcia.",
+      "enter_station_ids": "Wpisz co najmniej jedno ID lub link stacji.",
+      "account_required_for_favorites": "Import ulubionych wymaga trybu z kontem. Usuń i ponownie dodaj integrację w trybie konta, jeśli chcesz go włączyć.",
+      "no_nearby_stations": "Nie znaleziono stacji z cenami PaliwoMapa w tym promieniu. Zwiększ promień lub spróbuj ponownie.",
+      "nearby_search_failed": "Nie udało się wyszukać stacji w okolicy. Spróbuj później.",
+      "home_location_missing": "Ustaw prawidłowe współrzędne domu w Home Assistant.",
+      "select_at_least_one_station": "Zaznacz co najmniej jedną stację.",
+      "select_at_least_one_fuel": "Wybierz co najmniej jeden rodzaj paliwa."
+    }
+  }
+}
