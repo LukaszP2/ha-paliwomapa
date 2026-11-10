@@ -8,13 +8,23 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .geo import build_overpass_query, parse_overpass_stations
-
-from aiohttp import ClientError, ClientResponseError, ClientSession
+from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import OVERPASS_URLS, REQUEST_TIMEOUT, SUPABASE_API_KEY, SUPABASE_URL
-from .models import extract_favorite_station_ids, normalize_station_response, normalize_station_row, validate_station_id
+from .const import (
+    OVERPASS_TIMEOUT,
+    OVERPASS_URLS,
+    REQUEST_TIMEOUT,
+    SUPABASE_API_KEY,
+    SUPABASE_URL,
+)
+from .geo import build_overpass_query, parse_overpass_stations
+from .models import (
+    extract_favorite_station_ids,
+    normalize_station_response,
+    normalize_station_row,
+    validate_station_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +45,7 @@ class PaliwoMapaApi:
         self._email = email
         self._password = password
         self._access_token: str | None = None
+        self._refresh_token: str | None = None
         self._user_id: str | None = None
 
     @staticmethod
@@ -51,8 +62,16 @@ class PaliwoMapaApi:
         except ValueError as err:
             raise PaliwoMapaApiError(str(err)) from err
 
-    async def _request_json(self, method: str, path: str, *, params: dict[str, str] | None = None,
-                            json_body: dict[str, Any] | None = None, auth: bool = False) -> Any:
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        auth: bool = False,
+        retry_auth: bool = True,
+    ) -> Any:
         headers = {"apikey": SUPABASE_API_KEY, "Accept": "application/json"}
         if json_body is not None:
             headers["Content-Type"] = "application/json"
@@ -62,12 +81,27 @@ class PaliwoMapaApi:
                 headers["Authorization"] = f"Bearer {self._access_token}"
         try:
             async with self._session.request(
-                method, f"{SUPABASE_URL}{path}", params=params, json=json_body,
-                headers=headers, timeout=REQUEST_TIMEOUT,
+                method,
+                f"{SUPABASE_URL}{path}",
+                params=params,
+                json=json_body,
+                headers=headers,
+                timeout=ClientTimeout(total=REQUEST_TIMEOUT),
             ) as response:
                 if response.status in (401, 403):
                     if path.startswith("/auth/"):
                         raise PaliwoMapaAuthError("Logowanie do PaliwoMapa nie powiodło się. Sprawdź dane konta.")
+                    if auth and retry_auth:
+                        _LOGGER.debug("PaliwoMapa access token expired or rejected, attempting re-login")
+                        self._access_token = None
+                        return await self._request_json(
+                            method,
+                            path,
+                            params=params,
+                            json_body=json_body,
+                            auth=True,
+                            retry_auth=False,
+                        )
                     raise PaliwoMapaAuthError("PaliwoMapa odrzuciła dostęp. Sprawdź konto lub uprawnienia.")
                 response.raise_for_status()
                 try:
@@ -82,15 +116,18 @@ class PaliwoMapaApi:
         except (ClientError, TimeoutError) as err:
             raise PaliwoMapaApiError("Nie można połączyć się z PaliwoMapa.") from err
 
-    async def async_login(self) -> str:
+    async def async_login(self, force: bool = False) -> str:
         """Authenticate only when account mode was configured."""
-        if self._access_token and self._user_id:
+        if not force and self._access_token and self._user_id:
             return self._user_id
         if not self._email or not self._password:
             raise PaliwoMapaAuthError("Nie skonfigurowano danych konta PaliwoMapa.")
         payload = await self._request_json(
-            "POST", "/auth/v1/token", params={"grant_type": "password"},
-            json_body={"email": self._email, "password": self._password}, auth=False,
+            "POST",
+            "/auth/v1/token",
+            params={"grant_type": "password"},
+            json_body={"email": self._email, "password": self._password},
+            auth=False,
         )
         if not isinstance(payload, dict) or not payload.get("access_token") or not isinstance(payload.get("user"), dict):
             raise PaliwoMapaAuthError("Odpowiedź logowania nie zawiera wymaganych danych.")
@@ -98,18 +135,19 @@ class PaliwoMapaApi:
         if not isinstance(user_id, str) or not user_id:
             raise PaliwoMapaAuthError("Odpowiedź logowania nie zawiera identyfikatora użytkownika.")
         self._access_token = payload["access_token"]
+        self._refresh_token = payload.get("refresh_token")
         self._user_id = user_id
         return user_id
 
     async def async_get_station(self, station_id: str) -> dict[str, Any]:
         station_id = self.validate_station_id(station_id)
         payload = await self._request_json(
-            "GET", "/rest/v1/app_docs",
+            "GET",
+            "/rest/v1/app_docs",
             params={"select": "path,doc_id,data", "path": f"eq.prices/{station_id}"},
             auth=bool(self._email and self._password),
         )
         return self.parse_station_response(payload, station_id)
-
 
     async def async_get_stations(self, station_ids: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch many stations through the observed batch RPC in one request."""
@@ -117,8 +155,10 @@ class PaliwoMapaApi:
         if not ids:
             return {}
         payload = await self._request_json(
-            "POST", "/rest/v1/rpc/get_prices_by_ids",
-            json_body={"ids": ids}, auth=bool(self._email and self._password),
+            "POST",
+            "/rest/v1/rpc/get_prices_by_ids",
+            json_body={"ids": ids},
+            auth=bool(self._email and self._password),
         )
         if not isinstance(payload, list):
             raise PaliwoMapaApiError("API zbiorcze zwróciło nieprawidłową odpowiedź.")
@@ -126,7 +166,7 @@ class PaliwoMapaApi:
         for row in payload:
             try:
                 station = normalize_station_row(row)
-            except ValueError as err:
+            except (ValueError, TypeError) as err:
                 _LOGGER.debug("Skipping malformed station row in batch response: %s", err)
                 continue
             if station["station_id"] in ids:
@@ -134,8 +174,6 @@ class PaliwoMapaApi:
         missing = sorted(set(ids) - set(result))
         if missing:
             _LOGGER.debug("PaliwoMapa batch response omitted station IDs: %s", missing)
-        if not result:
-            raise PaliwoMapaApiError("API nie zwróciło danych żadnej z wybranych stacji.")
         return result
 
     async def async_search_nearby_stations(
@@ -161,8 +199,8 @@ class PaliwoMapaApi:
                 async with self._session.post(
                     endpoint,
                     data={"data": query},
-                    headers={"Accept": "application/json", "User-Agent": "HomeAssistant-PaliwoMapa/0.3.3"},
-                    timeout=35,
+                    headers={"Accept": "application/json", "User-Agent": "HomeAssistant-PaliwoMapa/0.5.0"},
+                    timeout=ClientTimeout(total=OVERPASS_TIMEOUT),
                 ) as response:
                     if response.status >= 400:
                         body = (await response.text())[:240].replace("\n", " ")
@@ -236,7 +274,10 @@ class PaliwoMapaApi:
         """Return a limited profile summary, never the auth token."""
         user_id = await self.async_login()
         payload = await self._request_json(
-            "GET", "/rest/v1/profiles", params={"id": f"eq.{user_id}"}, auth=True,
+            "GET",
+            "/rest/v1/profiles",
+            params={"id": f"eq.{user_id}"},
+            auth=True,
         )
         if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
             return {}
@@ -248,7 +289,8 @@ class PaliwoMapaApi:
         """Read saved station IDs from the exact favorites document used by the app."""
         user_id = await self.async_login()
         payload = await self._request_json(
-            "GET", "/rest/v1/app_docs",
+            "GET",
+            "/rest/v1/app_docs",
             params={"select": "path,doc_id,data", "path": f"eq.favorites/{user_id}"},
             auth=True,
         )

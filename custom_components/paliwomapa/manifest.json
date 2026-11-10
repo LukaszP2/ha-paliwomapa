@@ -8,10 +8,9 @@
   "documentation": "https://github.com/LukaszP2/ha-paliwomapa",
   "iot_class": "cloud_polling",
   "requirements": [],
-  "version": "0.4.9",
+  "version": "0.5.0",
   "dependencies": [
-    "frontend",
-    "lovelace"
+    "http"
   ],
   "issue_tracker": "https://github.com/LukaszP2/ha-paliwomapa/issues"
 }

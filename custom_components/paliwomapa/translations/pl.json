@@ -38,6 +38,21 @@
         "data": {
           "fuel_types": "Monitorowane rodzaje paliwa"
         }
+      },
+      "reauth_confirm": {
+        "title": "Ponowne logowanie do PaliwoMapa",
+        "description": "Wpisz hasło dla konta {email}.",
+        "data": {
+          "password": "Hasło"
+        }
+      },
+      "reconfigure": {
+        "title": "Rekonfiguracja PaliwoMapa",
+        "description": "Zaktualizuj dane logowania lub zmień tryb dostępu.",
+        "data": {
+          "email": "E-mail",
+          "password": "Hasło"
+        }
       }
     },
     "error": {
@@ -53,7 +68,9 @@
       "select_at_least_one_fuel": "Wybierz co najmniej jeden rodzaj paliwa."
     },
     "abort": {
-      "already_configured": "PaliwoMapa jest już skonfigurowana."
+      "already_configured": "PaliwoMapa jest już skonfigurowana.",
+      "reauth_successful": "Ponowne logowanie powiodło się.",
+      "reconfigure_successful": "Rekonfiguracja powiodła się."
     }
   },
   "options": {
@@ -82,7 +99,9 @@
       "some_stations_unavailable": "Nie udało się pobrać danych wszystkich podanych stacji.",
       "select_station_to_remove": "Wpisz ID/link stacji do usunięcia.",
       "enter_station_ids": "Wpisz co najmniej jedno ID lub link stacji.",
-      "account_required_for_favorites": "Import ulubionych wymaga trybu z kontem. Usuń i ponownie dodaj integrację w trybie konta, jeśli chcesz go włączyć.",
+      "account_required_for_favorites": "Import ulubionych wymaga trybu z kontem. Rekonfiguruj integrację w trybie konta, jeśli chcesz go włączyć.",
+      "favorites_not_found": "API nie zwróciło ulubionych stacji. Nic nie zaimportowano.",
+      "favorites_already_monitored": "Znaleziono ulubione stacje, ale wszystkie są już monitorowane.",
       "no_nearby_stations": "Nie znaleziono stacji z cenami PaliwoMapa w tym promieniu. Zwiększ promień lub spróbuj ponownie.",
       "nearby_search_failed": "Nie udało się wyszukać stacji w okolicy. Spróbuj później.",
       "home_location_missing": "Ustaw prawidłowe współrzędne domu w Home Assistant.",

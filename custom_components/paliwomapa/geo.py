@@ -19,12 +19,11 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 6371.0088 * 2 * asin(sqrt(min(1.0, a)))
 
 
-
 def build_overpass_query(latitude: float, longitude: float, radius_km: float) -> str:
     """Build an Overpass query; its `around` distance is expressed in metres."""
     if not 1 <= float(radius_km) <= 50:
         raise ValueError("Promień wyszukiwania musi mieścić się w zakresie 1–50 km.")
-    radius_m = int(round(float(radius_km) * 1000))
+    radius_m = round(float(radius_km) * 1000)
     return (
         f'[out:json][timeout:25];('
         f'node["amenity"="fuel"](around:{radius_m},{float(latitude):.7f},{float(longitude):.7f});'
@@ -33,10 +32,11 @@ def build_overpass_query(latitude: float, longitude: float, radius_km: float) ->
         f');out center tags;'
     )
 
+
 def parse_overpass_stations(payload: Any, origin_lat: float, origin_lon: float, radius_km: float) -> list[dict[str, Any]]:
     """Normalize Overpass fuel POIs and retain stations inside the requested radius."""
     if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
-        raise ValueError("Nieprawidłowa odpowiedź wyszukiwania stacji.")
+        raise TypeError("Nieprawidłowa odpowiedź wyszukiwania stacji.")
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in payload["elements"]:
@@ -45,26 +45,34 @@ def parse_overpass_stations(payload: Any, origin_lat: float, origin_lon: float, 
         station_id = str(item.get("id", ""))
         if not station_id.isdigit() or station_id in seen:
             continue
-        tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+        raw_tags = item.get("tags")
+        tags: dict[str, Any] = raw_tags if isinstance(raw_tags, dict) else {}
         lat = item.get("lat")
         lon = item.get("lon")
         if (lat is None or lon is None) and isinstance(item.get("center"), dict):
-            lat = item["center"].get("lat")
-            lon = item["center"].get("lon")
+            center = item["center"]
+            lat = center.get("lat")
+            lon = center.get("lon")
+        if lat is None or lon is None:
+            continue
         try:
-            lat, lon = float(lat), float(lon)
-            distance = haversine_km(origin_lat, origin_lon, lat, lon)
+            lat_f = float(lat)
+            lon_f = float(lon)
+            distance = haversine_km(origin_lat, origin_lon, lat_f, lon_f)
         except (TypeError, ValueError):
             continue
         if distance > radius_km:
             continue
         seen.add(station_id)
+        osm_name = tags.get("name") or tags.get("brand") or tags.get("operator")
+        addr_parts = [str(tags[k]) for k in ("addr:street", "addr:housenumber", "addr:city") if tags.get(k)]
+        osm_address = ", ".join(addr_parts) or None
         results.append({
             "station_id": station_id,
-            "latitude": lat,
-            "longitude": lon,
+            "latitude": lat_f,
+            "longitude": lon_f,
             "distance_km": round(distance, 2),
-            "osm_name": tags.get("name") or tags.get("brand") or tags.get("operator"),
-            "osm_address": ", ".join(str(tags[k]) for k in ("addr:street", "addr:housenumber", "addr:city") if tags.get(k)) or None,
+            "osm_name": osm_name,
+            "osm_address": osm_address,
         })
     return sorted(results, key=lambda row: row["distance_km"])

@@ -38,6 +38,21 @@
         "data": {
           "fuel_types": "Monitored fuel types"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate with PaliwoMapa",
+        "description": "Please enter your password for {email}.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure PaliwoMapa",
+        "description": "Update credentials or switch access mode.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -53,7 +68,9 @@
       "select_at_least_one_fuel": "Select at least one fuel type."
     },
     "abort": {
-      "already_configured": "PaliwoMapa is already configured."
+      "already_configured": "PaliwoMapa is already configured.",
+      "reauth_successful": "Reauthentication was successful.",
+      "reconfigure_successful": "Reconfiguration was successful."
     }
   },
   "options": {
@@ -83,7 +100,7 @@
       "select_station_to_remove": "Enter station IDs/URLs to remove.",
       "enter_station_ids": "Enter at least one station ID or URL.",
       "account_required_for_favorites": "Favorite import requires account mode. Reconfigure the integration with a PaliwoMapa account to enable it.",
-      "favorites_not_found": "The API returned no favorite stations. Nothing was imported. The app request that loads saved favorites must be identified.",
+      "favorites_not_found": "The API returned no favorite stations. Nothing was imported.",
       "favorites_already_monitored": "Favorites were found, but all are already monitored.",
       "no_nearby_stations": "No stations with PaliwoMapa prices were found in this radius. Increase the radius or try again.",
       "nearby_search_failed": "Could not search for nearby stations. Try again later.",

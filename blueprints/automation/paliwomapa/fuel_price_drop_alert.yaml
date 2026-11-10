@@ -1,0 +1,108 @@
+blueprint:
+  name: "PaliwoMapa — Powiadomienie o niskiej cenie paliwa"
+  description: >-
+    Wysyła powiadomienie na aplikację mobilną Home Assistant z bezpośrednim
+    przyciskiem nawigacji, gdy cena wybranego paliwa (na konkretnej stacji
+    lub w sensorze najtańszego paliwa) spadnie poniżej ustalonego progu.
+  domain: automation
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    entities_section:
+      name: Sensor ceny paliwa
+      icon: mdi:gas-station
+      description: Wybierz sensor monitorujący cenę paliwa z integracji PaliwoMapa.
+      input:
+        fuel_price_sensor:
+          name: Sensor ceny
+          description: Sensor ceny paliwa na konkretnej stacji lub sensor najtańszego paliwa w okolicy (np. sensor.cheapest_pb95).
+          selector:
+            entity:
+              filter:
+                - integration: paliwomapa
+                  domain: sensor
+    threshold_section:
+      name: Próg cenowy
+      icon: mdi:cash-multiple
+      description: Konfiguracja poziomu ceny aktywującego powiadomienie.
+      input:
+        price_threshold:
+          name: Maksymalna cena aktywująca alert (PLN/L)
+          description: Alert zostanie wysłany, gdy cena paliwa spadnie poniżej tej wartości.
+          default: 6.20
+          selector:
+            number:
+              min: 1.0
+              max: 20.0
+              step: 0.01
+              unit_of_measurement: "PLN/L"
+              mode: box
+    notifications_section:
+      name: Powiadomienia i akcje
+      icon: mdi:bell-ring
+      description: Wybierz urządzenie mobilne oraz opcjonalne dodatkowe akcje.
+      input:
+        notify_device:
+          name: Urządzenie do powiadomień
+          description: Telefon lub tablet z aplikacją Home Assistant Companion.
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+        custom_actions:
+          name: Dodatkowe akcje (opcjonalnie)
+          description: Dodatkowe akcje do wykonania w momencie wyzwolenia alertu (np. powiadomienie na głośnik, wiadomość Telegram).
+          default: []
+          selector:
+            action: {}
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - trigger: numeric_state
+    entity_id: !input fuel_price_sensor
+    below: !input price_threshold
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none
+         and trigger.to_state.state not in ['unavailable', 'unknown']
+         and trigger.from_state is not none
+         and trigger.from_state.state not in ['unavailable', 'unknown'] }}
+
+action:
+  - variables:
+      sensor_id: !input fuel_price_sensor
+      price: "{{ trigger.to_state.state | float(0) | round(2) }}"
+      station_name: >-
+        {{ state_attr(sensor_id, 'station_name')
+           | default(device_attr(sensor_id, 'name_by_user'), true)
+           | default(device_attr(sensor_id, 'name'), true)
+           | default('Stacja PaliwoMapa', true) }}
+      station_address: "{{ state_attr(sensor_id, 'station_address') | default('', true) }}"
+      nav_url: >-
+        {% if state_attr(sensor_id, 'navigation_url') %}
+          {{ state_attr(sensor_id, 'navigation_url') }}
+        {% elif state_attr(sensor_id, 'latitude') is not none and state_attr(sensor_id, 'longitude') is not none %}
+          https://www.google.com/maps/dir/?api=1&destination={{ state_attr(sensor_id, 'latitude') }},{{ state_attr(sensor_id, 'longitude') }}
+        {% else %}
+          https://paliwomapa.pl/
+        {% endif %}
+  - alias: "Wyślij powiadomienie na telefon z przyciskiem nawigacji"
+    domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "⛽ Okazja cenowa: {{ price }} PLN/L"
+    message: >-
+      Cena paliwa spadła do {{ price }} PLN/L na stacji {{ station_name }}{% if station_address != '' %} ({{ station_address }}){% endif %}.
+    data:
+      url: "{{ nav_url }}"
+      clickAction: "{{ nav_url }}"
+      actions:
+        - action: "URI"
+          title: "🗺️ Nawiguj do stacji"
+          uri: "{{ nav_url }}"
+  - choose: []
+    default: !input custom_actions

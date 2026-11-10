@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -12,8 +13,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PaliwoMapaApi
 from .const import (
-    AUTH_ACCOUNT, AUTH_NONE, CONF_AUTH_MODE, CONF_EMAIL, CONF_PASSWORD,
-    CONF_STATION_IDS, CONF_STATION_LOCATIONS, CONF_FUEL_TYPES, DOMAIN, FUEL_LABELS,
+    AUTH_ACCOUNT,
+    AUTH_NONE,
+    CONF_AUTH_MODE,
+    CONF_EMAIL,
+    CONF_FUEL_TYPES,
+    CONF_PASSWORD,
+    CONF_STATION_IDS,
+    CONF_STATION_LOCATIONS,
+    DOMAIN,
+    FUEL_LABELS,
 )
 from .models import parse_station_ids
 
@@ -38,7 +47,7 @@ def _location_data(station: dict) -> dict:
     }
 
 
-class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore
     """Set up one PaliwoMapa entry with optional account authentication."""
 
     VERSION = 1
@@ -50,6 +59,7 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_data: dict = {}
         self._pending_stations: dict = {}
         self._pending_title: str = "PaliwoMapa"
+        self._reauth_entry: config_entries.ConfigEntry | None = None
 
     async def async_step_user(self, user_input=None):
         if user_input is not None:
@@ -79,7 +89,7 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     async_get_clientsession(self.hass),
                     credentials[CONF_EMAIL], credentials[CONF_PASSWORD],
                 )
-                await api.async_login()
+                await api.async_login(force=True)
             except HomeAssistantError:
                 errors["base"] = "invalid_auth"
             else:
@@ -130,7 +140,7 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         except HomeAssistantError as err:
                             _LOGGER.warning("Nie udało się pobrać ulubionych stacji PaliwoMapa: %s", err)
                             favorites = []
-                        station_ids = list(dict.fromkeys([*favorites, *manual_ids]))
+                        station_ids = [str(x) for x in dict.fromkeys([*favorites, *manual_ids])]
                     if station_ids:
                         stations = await api.async_get_stations(station_ids)
                         missing = set(station_ids) - set(stations)
@@ -166,7 +176,7 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     data = {CONF_AUTH_MODE: self._auth_mode, **self._credentials}
-                    station_ids = list(dict.fromkeys(selected))
+                    station_ids = [str(x) for x in dict.fromkeys(selected)]
                     data[CONF_STATION_IDS] = station_ids
                     data[CONF_STATION_LOCATIONS] = {
                         station_id: _location_data(self._nearby_results[station_id])
@@ -200,7 +210,8 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             names = [s.get("station_name") for s in stations.values() if s.get("station_name")]
         else:
             names = []
-        await self.async_set_unique_id("paliwomapa_instance")
+        unique_id = f"paliwomapa_{data[CONF_EMAIL].lower()}" if data.get(CONF_EMAIL) else "paliwomapa_instance"
+        await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
         self._pending_data = dict(data)
         self._pending_stations = dict(stations or {})
@@ -221,6 +232,74 @@ class PaliwoMapaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="fuels",
             data_schema=vol.Schema({
                 vol.Required(CONF_FUEL_TYPES, default=list(FUEL_LABELS)): cv.multi_select({key: label for key, label in FUEL_LABELS.items()}),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]):
+        """Handle reauthorization request from Home Assistant."""
+        self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Prompt user for new credentials during reauth."""
+        errors = {}
+        if user_input is not None and self._reauth_entry is not None:
+            email = self._reauth_entry.data.get(CONF_EMAIL, "")
+            password = user_input[CONF_PASSWORD]
+            try:
+                api = PaliwoMapaApi(
+                    async_get_clientsession(self.hass),
+                    email,
+                    password,
+                )
+                await api.async_login(force=True)
+            except HomeAssistantError:
+                errors["base"] = "invalid_auth"
+            else:
+                return self.async_update_reload_and_abort(
+                    self._reauth_entry,
+                    data={**self._reauth_entry.data, CONF_PASSWORD: password},
+                )
+
+        email_val = self._reauth_entry.data.get(CONF_EMAIL, "") if self._reauth_entry else ""
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({
+                vol.Required(CONF_PASSWORD): str,
+            }),
+            errors=errors,
+            description_placeholders={"email": email_val},
+        )
+
+    async def async_step_reconfigure(self, user_input=None):
+        """Handle reconfiguration of connection or credentials."""
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        errors = {}
+        if user_input is not None and entry is not None:
+            email = user_input.get(CONF_EMAIL, "").strip()
+            password = user_input.get(CONF_PASSWORD, "")
+            try:
+                if email and password:
+                    api = PaliwoMapaApi(async_get_clientsession(self.hass), email, password)
+                    await api.async_login(force=True)
+            except HomeAssistantError:
+                errors["base"] = "invalid_auth"
+            else:
+                new_data = {
+                    **entry.data,
+                    CONF_AUTH_MODE: AUTH_ACCOUNT if (email and password) else AUTH_NONE,
+                    CONF_EMAIL: email,
+                    CONF_PASSWORD: password,
+                }
+                return self.async_update_reload_and_abort(entry, data=new_data)
+
+        default_email = entry.data.get(CONF_EMAIL, "") if entry else ""
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_EMAIL, default=default_email): str,
+                vol.Optional(CONF_PASSWORD, default=""): str,
             }),
             errors=errors,
         )
@@ -284,7 +363,7 @@ class PaliwoMapaOptionsFlow(config_entries.OptionsFlow):
                             if not new_ids:
                                 errors["base"] = "favorites_already_monitored"
                             else:
-                                return await self._save(list(dict.fromkeys([*current, *new_ids])))
+                                return await self._save([str(x) for x in dict.fromkeys([*current, *new_ids])])
                 elif action in ("add", "replace") and supplied_ids:
                     api = self._api()
                     stations = await api.async_get_stations(supplied_ids)
@@ -292,7 +371,7 @@ class PaliwoMapaOptionsFlow(config_entries.OptionsFlow):
                     if missing:
                         errors["base"] = "some_stations_unavailable"
                     else:
-                        updated = list(dict.fromkeys([*(current if action == "add" else []), *supplied_ids]))
+                        updated = [str(x) for x in dict.fromkeys([*(current if action == "add" else []), *supplied_ids])]
                         return await self._save(updated)
                 elif action == "remove":
                     if not supplied_ids:
@@ -340,8 +419,8 @@ class PaliwoMapaOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "select_at_least_one_station"
             else:
                 current = self._current_ids()
-                updated = list(dict.fromkeys([*current, *selected]))
-                locations = dict(self._entry.data.get(CONF_STATION_LOCATIONS, {}))
+                updated = [str(x) for x in dict.fromkeys([*current, *selected])]
+                locations = dict(self._entry.options.get(CONF_STATION_LOCATIONS, self._entry.data.get(CONF_STATION_LOCATIONS, {})))
                 for station_id in selected:
                     if station_id in self._nearby_results:
                         locations[station_id] = _location_data(self._nearby_results[station_id])
@@ -361,7 +440,7 @@ class PaliwoMapaOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _current_ids(self) -> list[str]:
-        raw = self._entry.data.get(CONF_STATION_IDS)
+        raw = self._entry.options.get(CONF_STATION_IDS, self._entry.data.get(CONF_STATION_IDS))
         if raw is None:
             raw = self._entry.data.get("station_id", [])
         if isinstance(raw, str):
@@ -378,13 +457,14 @@ class PaliwoMapaOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def _save(self, station_ids: list[str], locations: dict | None = None):
-        old_locations = dict(self._entry.data.get(CONF_STATION_LOCATIONS, {}))
+        old_locations = dict(self._entry.options.get(CONF_STATION_LOCATIONS, self._entry.data.get(CONF_STATION_LOCATIONS, {})))
         if locations is not None:
             old_locations.update(locations)
         kept_locations = {sid: val for sid, val in old_locations.items() if sid in station_ids}
-        new_data = {**self._entry.data, CONF_STATION_IDS: station_ids, CONF_STATION_LOCATIONS: kept_locations}
-        new_data.pop("station_id", None)
-        new_options = {**self._entry.options, CONF_FUEL_TYPES: self._selected_fuel_types}
-        self.hass.config_entries.async_update_entry(self._entry, data=new_data, options=new_options)
-        await self.hass.config_entries.async_reload(self._entry.entry_id)
-        return self.async_create_entry(title="", data={})
+        new_options = {
+            **self._entry.options,
+            CONF_STATION_IDS: station_ids,
+            CONF_STATION_LOCATIONS: kept_locations,
+            CONF_FUEL_TYPES: self._selected_fuel_types,
+        }
+        return self.async_create_entry(title="", data=new_options)

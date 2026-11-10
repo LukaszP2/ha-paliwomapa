@@ -1,16 +1,16 @@
 /**
  * PaliwoMapa Lovelace Card
  * Native Home Assistant custom card; no external frontend dependencies.
- * Version: 0.2.8
+ * Version: 0.5.0
  */
 (() => {
   const CARD_TAG = "paliwomapa-card";
   const FUEL_TYPES = [
-    { key: "pb95", label: "PB95", icon: "mdi:gas-station", price: "sensor.najtansze_pb95", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_pb95" },
-    { key: "pb98", label: "PB98", icon: "mdi:gas-station", price: "sensor.najtansze_pb98", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_pb98" },
-    { key: "on", label: "ON", icon: "mdi:gas-station", price: "sensor.najtansze_on", station: "sensor.stacja_z_najtanszym_on" },
-    { key: "on_premium", label: "ON premium", icon: "mdi:gas-station", price: "sensor.najtansze_on_premium", station: "sensor.stacja_z_najtanszym_on_premium" },
-    { key: "lpg", label: "LPG", icon: "mdi:gas-cylinder", price: "sensor.najtansze_lpg", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_lpg" },
+    { key: "pb95", altKey: "pb95", label: "PB95", icon: "mdi:gas-station", price: "sensor.paliwomapa_podsumowanie_najtansze_pb95", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_pb95" },
+    { key: "pb98", altKey: "pb98", label: "PB98", icon: "mdi:gas-station", price: "sensor.paliwomapa_podsumowanie_najtansze_pb98", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_pb98" },
+    { key: "on", altKey: "on", label: "ON", icon: "mdi:gas-station", price: "sensor.paliwomapa_podsumowanie_najtansze_on", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_on" },
+    { key: "on_plus", altKey: "on_premium", label: "ON premium", icon: "mdi:gas-station", price: "sensor.paliwomapa_podsumowanie_najtansze_on_plus", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_on_plus" },
+    { key: "lpg", altKey: "lpg", label: "LPG", icon: "mdi:gas-cylinder", price: "sensor.paliwomapa_podsumowanie_najtansze_lpg", station: "sensor.paliwomapa_podsumowanie_stacja_z_najtanszym_lpg" },
   ];
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -53,10 +53,21 @@
     }
 
     _entityId(fuel, kind) {
-      const custom = this._config.fuels?.[fuel.key]?.[kind];
+      const custom = this._config.fuels?.[fuel.key]?.[kind] || (fuel.altKey && this._config.fuels?.[fuel.altKey]?.[kind]);
       if (custom) return custom;
       const defaults = FUEL_TYPES.find((f) => f.key === fuel.key);
-      return defaults?.[kind] || "";
+      const configuredDefault = defaults?.[kind] || "";
+      if (this._state(configuredDefault)) return configuredDefault;
+      const candidates = [
+        `sensor.paliwomapa_podsumowanie_${kind === "price" ? "najtansze" : "stacja_z_najtanszym"}_${fuel.key}`,
+        `sensor.${kind === "price" ? "najtansze" : "stacja_z_najtanszym"}_${fuel.key}`,
+        fuel.altKey ? `sensor.paliwomapa_podsumowanie_${kind === "price" ? "najtansze" : "stacja_z_najtanszym"}_${fuel.altKey}` : null,
+        fuel.altKey ? `sensor.${kind === "price" ? "najtansze" : "stacja_z_najtanszym"}_${fuel.altKey}` : null,
+      ].filter(Boolean);
+      for (const cand of candidates) {
+        if (this._state(cand)) return cand;
+      }
+      return configuredDefault;
     }
 
     _state(entityId) {
@@ -92,7 +103,7 @@
 
     _fuelKey(value = "") {
       const text = String(value).toLocaleLowerCase("pl-PL").replace(/[._-]+/g, " ");
-      if (/on premium|premium on|diesel premium/.test(text)) return "on_premium";
+      if (/on premium|premium on|diesel premium|on_plus|on plus/.test(text)) return "on_plus";
       if (/pb ?98|benzyna 98|eurosuper 98/.test(text)) return "pb98";
       if (/pb ?95|benzyna 95|eurosuper 95/.test(text)) return "pb95";
       if (/\blpg\b|autogas|gaz/.test(text)) return "lpg";
@@ -101,8 +112,8 @@
     }
 
     _fuelBadgeHtml(key, label, compact = false) {
-      const safeKey = ["pb95", "pb98", "on", "on_premium", "lpg"].includes(key) ? key : "unknown";
-      if (safeKey === "on_premium") return `<span class="fuel-badge fuel-on-premium${compact ? " fuel-badge-compact" : ""}"><span>ON</span><small>premium</small></span>`;
+      const safeKey = ["pb95", "pb98", "on", "on_plus", "on_premium", "lpg"].includes(key) ? key : "unknown";
+      if (safeKey === "on_premium" || safeKey === "on_plus") return `<span class="fuel-badge fuel-on-premium${compact ? " fuel-badge-compact" : ""}"><span>ON</span><small>premium</small></span>`;
       return `<span class="fuel-badge fuel-${safeKey}${compact ? " fuel-badge-compact" : ""}">${esc(label || key.toUpperCase())}</span>`;
     }
 
@@ -245,7 +256,7 @@
       });
       // Keep all supported fuels available as filters, even if current entity names
       // do not expose a fuel_type attribute (notably plain ON and LPG sensors).
-      const knownFuelLabels = { pb95: "PB95", pb98: "PB98", on: "ON", on_premium: "ON premium", lpg: "LPG" };
+      const knownFuelLabels = { pb95: "PB95", pb98: "PB98", on: "ON", on_plus: "ON premium", lpg: "LPG" };
       const detectedFuelLabels = Object.fromEntries(allStations
         .filter((station) => station.fuel && station.fuelKey)
         .map((station) => [station.fuelKey, station.fuel]));

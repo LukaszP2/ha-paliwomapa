@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 _STATION_ID_RE = re.compile(r"^\d{1,20}$")
-_URL_STATION_ID_RE = re.compile(r"(?:prices/|station(?:/|=)|station_id=|stationId=|station_id/|[?&]id=)(\d{1,20})(?:\D|$)", re.I)
+_URL_STATION_ID_RE = re.compile(r"(?:prices/|station(?:/|=)|station_id=|stationId=|station_id/|[?&]id=)(\d{1,20})(?:\D|$)", re.IGNORECASE)
 
 
 def validate_station_id(station_id: str) -> str:
@@ -33,7 +33,7 @@ def parse_station_ids(raw: str) -> list[str]:
 
 def normalize_station_row(row: Any, requested_id: str | None = None) -> dict[str, Any]:
     if not isinstance(row, dict):
-        raise ValueError("API zwróciło nieprawidłowy rekord stacji.")
+        raise TypeError("API zwróciło nieprawidłowy rekord stacji.")
     station_id = str(requested_id or row.get("doc_id") or "")
     try:
         station_id = validate_station_id(station_id)
@@ -41,7 +41,7 @@ def normalize_station_row(row: Any, requested_id: str | None = None) -> dict[str
         raise ValueError("API zwróciło rekord bez poprawnego ID stacji.") from err
     data = row.get("data")
     if not isinstance(data, dict):
-        raise ValueError("API zwróciło nieprawidłowe dane stacji.")
+        raise TypeError("API zwróciło nieprawidłowe dane stacji.")
     prices: dict[str, float] = {}
     price_updated: dict[str, Any] = {}
     for key in ("pb95", "pb98", "on", "on_plus", "lpg"):
@@ -49,8 +49,6 @@ def normalize_station_row(row: Any, requested_id: str | None = None) -> dict[str
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
             prices[key] = float(value)
             price_updated[key] = data.get(f"ud_{key}") or data.get("updated")
-    if not prices:
-        raise ValueError(f"Stacja {station_id} nie zawiera rozpoznanych cen paliw.")
     return {
         "station_id": station_id,
         "station_name": str(data.get("stationName") or f"Stacja {station_id}"),

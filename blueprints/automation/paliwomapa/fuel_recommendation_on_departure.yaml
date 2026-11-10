@@ -1,0 +1,157 @@
+blueprint:
+  name: "PaliwoMapa — Rekomendacja tankowania przy wyjeździe ze strefy"
+  description: >-
+    Sugeruje zatankowanie pojazdu, gdy opuszczasz wybraną strefę (np. pracę w drodze do domu),
+    a cena na stacji paliw jest niższa niż zadana cena maksymalna. Powiadomienie zawiera
+    bezpośredni przycisk nawigacji do stacji.
+  domain: automation
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    geofence_section:
+      name: Śledzenie lokalizacji i strefa
+      icon: mdi:map-marker-radius
+      description: Wybierz osobę/urządzenie oraz strefę, której opuszczenie ma wyzwolić sprawdzenie cen.
+      input:
+        tracker_entity:
+          name: Osoba lub urządzenie
+          description: Osoba (person.*) lub urządzenie (device_tracker.*) podlegające geolokalizacji.
+          selector:
+            entity:
+              filter:
+                - domain: person
+                - domain: device_tracker
+        departure_zone:
+          name: Opuszczana strefa
+          description: Strefa, po wyjściu z której sprawdzana jest cena paliwa (np. zone.work).
+          selector:
+            entity:
+              filter:
+                - domain: zone
+    fuel_section:
+      name: Kryteria cenowe paliwa
+      icon: mdi:gas-station
+      description: Wybierz monitorowany sensor paliwa oraz maksymalną cenę, przy której warto zatankować.
+      input:
+        fuel_price_sensor:
+          name: Sensor ceny paliwa
+          description: Sensor ceny paliwa na stacji po drodze lub sensor najtańszego paliwa (np. sensor.cheapest_pb95).
+          selector:
+            entity:
+              filter:
+                - integration: paliwomapa
+                  domain: sensor
+        max_price_threshold:
+          name: Maksymalna atrakcyjna cena (PLN/L)
+          description: Rekomendacja zostanie wysłana tylko wtedy, gdy aktualna cena nie przekracza tej wartości.
+          default: 6.30
+          selector:
+            number:
+              min: 1.0
+              max: 20.0
+              step: 0.01
+              unit_of_measurement: "PLN/L"
+              mode: box
+    schedule_section:
+      name: Przedział czasowy (opcjonalnie)
+      icon: mdi:clock-outline
+      description: Ogranicz wyzwalanie rekomendacji do określonych godzin powrotów (np. popołudnia).
+      input:
+        time_filter_enabled:
+          name: Włącz ograniczenie godzinowe
+          description: Jeśli włączone, alert pojawi się tylko w określonych godzinach.
+          default: true
+          selector:
+            boolean: {}
+        after_time:
+          name: Nie wcześniej niż
+          default: "14:00:00"
+          selector:
+            time: {}
+        before_time:
+          name: Nie później niż
+          default: "19:00:00"
+          selector:
+            time: {}
+    notifications_section:
+      name: Powiadomienia i akcje
+      icon: mdi:bell-ring
+      description: Wybierz urządzenie mobilne oraz opcjonalne dodatkowe akcje.
+      input:
+        notify_device:
+          name: Urządzenie do powiadomień
+          description: Telefon lub tablet z aplikacją Home Assistant Companion.
+          selector:
+            device:
+              filter:
+                integration: mobile_app
+        custom_actions:
+          name: Dodatkowe akcje (opcjonalnie)
+          description: Dodatkowe akcje do wykonania po wysłaniu rekomendacji.
+          default: []
+          selector:
+            action: {}
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - trigger: zone
+    entity_id: !input tracker_entity
+    zone: !input departure_zone
+    event: leave
+
+variables:
+  sensor_id: !input fuel_price_sensor
+  max_threshold: !input max_price_threshold
+  time_enabled: !input time_filter_enabled
+  after_t: !input after_time
+  before_t: !input before_time
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ states(sensor_id) not in ['unavailable', 'unknown']
+         and (states(sensor_id) | float(999)) <= (max_threshold | float) }}
+  - condition: template
+    value_template: >-
+      {% if time_enabled %}
+        {% set cur = now().strftime('%H:%M:%S') %}
+        {{ cur >= after_t and cur <= before_t }}
+      {% else %}
+        true
+      {% endif %}
+
+action:
+  - variables:
+      price: "{{ states(sensor_id) | float(0) | round(2) }}"
+      station_name: >-
+        {{ state_attr(sensor_id, 'station_name')
+           | default(device_attr(sensor_id, 'name_by_user'), true)
+           | default(device_attr(sensor_id, 'name'), true)
+           | default('Stacja PaliwoMapa', true) }}
+      station_address: "{{ state_attr(sensor_id, 'station_address') | default('', true) }}"
+      nav_url: >-
+        {% if state_attr(sensor_id, 'navigation_url') %}
+          {{ state_attr(sensor_id, 'navigation_url') }}
+        {% elif state_attr(sensor_id, 'latitude') is not none and state_attr(sensor_id, 'longitude') is not none %}
+          https://www.google.com/maps/dir/?api=1&destination={{ state_attr(sensor_id, 'latitude') }},{{ state_attr(sensor_id, 'longitude') }}
+        {% else %}
+          https://paliwomapa.pl/
+        {% endif %}
+  - alias: "Wyślij rekomendację tankowania z przyciskiem nawigacji"
+    domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "🚗 Dobra cena paliwa w drodze powrotnej"
+    message: >-
+      Przed powrotem warto zatankować: {{ price }} PLN/L na stacji {{ station_name }}{% if station_address != '' %} ({{ station_address }}){% endif %}.
+    data:
+      url: "{{ nav_url }}"
+      clickAction: "{{ nav_url }}"
+      actions:
+        - action: "URI"
+          title: "🗺️ Nawiguj na stację"
+          uri: "{{ nav_url }}"
+  - choose: []
+    default: !input custom_actions
