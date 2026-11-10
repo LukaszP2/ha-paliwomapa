@@ -1,6 +1,7 @@
 """Pytest configuration and mocks for isolated test runs without full Home Assistant."""
 from __future__ import annotations
 
+import importlib.util
 import sys
 from unittest.mock import MagicMock
 
@@ -18,7 +19,7 @@ class UpdateFailed(HomeAssistantError):
 
 
 # If voluptuous is not installed, mock it so config_flow can be imported.
-if "voluptuous" not in sys.modules:
+if "voluptuous" not in sys.modules and importlib.util.find_spec("voluptuous") is None:
     class MockMarker:
         def __init__(self, key, default=None):
             self.key = key
@@ -43,6 +44,28 @@ if "voluptuous" not in sys.modules:
     vol_mock.Coerce = lambda type_: (lambda val: type_(val))
     vol_mock.Range = lambda min=None, max=None: (lambda val: val)
     sys.modules["voluptuous"] = vol_mock
+
+# If aiohttp is not installed, mock basic classes so modules can be imported.
+if "aiohttp" not in sys.modules and importlib.util.find_spec("aiohttp") is None:
+    class ClientError(Exception):
+        pass
+
+    class ClientResponseError(ClientError):
+        def __init__(self, *args, status=None, message="", **kwargs):
+            super().__init__(*args, **kwargs)
+            self.status = status
+            self.message = message
+
+    class ClientTimeout:
+        def __init__(self, total=None, **kwargs):
+            self.total = total
+
+    aiohttp_mock = MagicMock()
+    aiohttp_mock.ClientError = ClientError
+    aiohttp_mock.ClientResponseError = ClientResponseError
+    aiohttp_mock.ClientTimeout = ClientTimeout
+    aiohttp_mock.ClientSession = MagicMock
+    sys.modules["aiohttp"] = aiohttp_mock
 
 
 class MockBaseFlow:

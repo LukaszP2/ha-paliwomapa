@@ -5,12 +5,12 @@
     "@LukaszP2"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/LukaszP2/ha-paliwomapa",
-  "iot_class": "cloud_polling",
-  "requirements": [],
-  "version": "0.5.0",
   "dependencies": [
     "http"
   ],
-  "issue_tracker": "https://github.com/LukaszP2/ha-paliwomapa/issues"
+  "documentation": "https://github.com/LukaszP2/ha-paliwomapa",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/LukaszP2/ha-paliwomapa/issues",
+  "requirements": [],
+  "version": "0.5.0"
 }
